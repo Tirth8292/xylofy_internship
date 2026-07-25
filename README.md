@@ -2,8 +2,6 @@
 
 A consolidated summary of weekly internship projects: regression, classification, and (pending) time-series forecasting work, each with model comparisons, data-driven fact-checking of the accompanying business write-ups, and next-step recommendations.
 
-> ⚠️ **Note on sources:** The Week 3 & 4 README (*Sales Forecasting Intelligence*) submitted alongside this project contains the same content as the Week 2 (*Employee Attrition*) README rather than actual sales-forecasting material. That section is not included below — it should be re-submitted with the correct write-up before this consolidated document is finalized.
-
 ---
 
 ## Table of Contents
