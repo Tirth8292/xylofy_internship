@@ -1,9 +1,9 @@
-# 👥 Employee Attrition Prediction — Analysis
+# 📦 Sales Demand Intelligence — Forecasting, Anomalies & Product Segmentation
 
-**Dataset:** IBM HR Analytics Employee Attrition (`WA_Fn-UseC_-HR-Employee-Attrition.csv`) · 1,470 employees, 35 columns
-**Best model:** Logistic Regression (`class_weight='balanced'`) · **Report date:** 28 June 2026
+**Dataset:** Superstore Sales (`train.csv`) · 9,800 orders, 24 columns, 4-year horizon (2015–2018)
+**Best forecasting model:** SARIMA(1,1,1)(1,1,1,12) · **Report date:** July 2026
 
-A classification project predicting which employees are likely to leave, comparing Logistic Regression, Random Forest, and Gradient Boosting.
+An end-to-end sales intelligence pipeline: time-series decomposition → 3-model forecast bake-off → segment-level forecasting → dual-method anomaly detection → K-Means product clustering → a Streamlit dashboard (`app.py`) that serves it all.
 
 ---
 
@@ -11,93 +11,123 @@ A classification project predicting which employees are likely to leave, compari
 
 | | |
 |---|---|
-| Rows / columns | 1,470 / 35 (45 after one-hot encoding + scaling) |
-| Target | `Attrition` — 237 left (16.1%), 1,233 stayed (83.9%) — **imbalanced** |
-| Dropped columns | `EmployeeNumber`, `Over18`, `StandardHours`, `EmployeeCount` (IDs/constants) |
-| Missing values | 0 |
-| Split | 80/20, stratified, `random_state=42` |
-| Imbalance handling | `class_weight='balanced'` (LR, RF); `sample_weight` via `compute_sample_weight` (GB) |
+| Rows / columns | 9,800 / 24 |
+| Date range | Jan 2015 – Dec 2018 (48 monthly points, 209 weekly points) |
+| Key fields | `Order Date`, `Sales`, `Category`, `Sub-Category`, `Region` |
+| Revenue by category | Technology $827,456 · Furniture $728,659 · Office Supplies $705,422 |
+| Fulfillment time | 3.96 days average, consistent across regions (3.91–4.07 days) |
 
 ---
 
-## 2. Model Comparison
+## 2. Forecast Model Bake-Off (Task 2–3)
 
-| Model | Precision | Recall | F1 | ROC-AUC |
-|---|---|---|---|---|
-| **Logistic Regression** | 0.357 | **0.660** | **0.463** | **0.804** |
-| Random Forest | 0.333 | 0.511 | 0.403 | 0.772 |
-| Gradient Boosting | 0.353 | 0.511 | 0.417 | 0.778 |
+Three models were validated on an 80/20 chronological split (last 3 months held out):
 
-**Winner: Logistic Regression**, by F1 and ROC-AUC. This is a sensible choice given the goal (catch at-risk employees, not just maximize accuracy) — its recall of 0.66 means it catches roughly two-thirds of actual leavers, well ahead of the other two models. The ROC curve (Chart 5) confirms this: the red LR line sits above the other two for most of the FPR range, especially in the low-FPR region that matters most for a "flag high-risk employees" use case.
+| Model | MAE | RMSE | MAPE |
+|---|---|---|---|
+| **SARIMA** | **$19,244.49** | **$19,950.07** | **20.53%** |
+| Prophet | $20,296.01 | $22,487.47 | 21.89% |
+| XGBoost | $29,086.17 | $29,122.60 | 32.14% |
 
-### ⚠️ One correction worth making before this goes to the HR Director
-
-The summary document reports **"80.4% accuracy"** and labels the 80.4% figure as **Model Accuracy** in its headline stats table. That 80.4% is actually the **ROC-AUC**, not accuracy — two different things. From the confusion matrix (Chart 3: TN=191, FP=56, FN=16, TP=31, n=294):
-
-Accuracy = (191+31) / 294 = **75.5%**
-
-75.5% is the correct accuracy figure. This isn't just semantics — with a class split of 84%/16%, a model predicting "everyone stays" would already hit ~84% accuracy while catching zero leavers, so accuracy is actually a *misleading* metric here and ROC-AUC/recall are the right ones to lead with. I'd recommend keeping ROC-AUC (0.804) as the headline number, but relabeling it correctly rather than calling it "accuracy" — an HR Director fact-checking this against the confusion matrix would spot the mismatch.
+**SARIMA wins** on all three metrics — this matches the memo's conclusion (§3) to authorize SARIMA for production. ✅ One caveat worth surfacing: a 20.5% MAPE is fairly wide for a "production-authorized" forecasting engine, and the memo doesn't mention this number anywhere, even though it's the model's own validated error rate.
 
 ---
 
-## 3. What Drives Attrition (Chart 4 + text)
+## 3. ⚠️ 90-Day Forecast — Numbers Don't Match the Summary Memo
 
-| Feature | Coefficient (abs) |
+The notebook's actual SARIMA 3-month-ahead forecast (Task 3 output) is:
+
+| | Month 1 | Month 2 | Month 3 |
+|---|---|---|---|
+| **Notebook (SARIMA, actual)** | $60,331.79 | $91,458.22 | $97,167.57 |
+| **Memo (`summary_Tirth_Shah.pdf`, §3)** | $52,450.00 | $58,900.00 | $64,200.00 |
+
+These are not close — the memo's numbers are lower, smoother, and don't reflect the sharp month-2 jump the model actually produces (driven by the strong November/December seasonal peak visible in the monthly seasonal table). This isn't a rounding difference; it looks like the memo's forecast figures were not pulled from this notebook run. **This should be corrected before the memo goes to the CFO** — a 34–52% understatement of projected revenue would directly undersize the procurement and safety-stock plan in §3–4.
+
+---
+
+## 4. Segment-Level Forecasts (Task 4)
+
+Five SARIMA models fit independently by Category and Region:
+
+| Segment | Month 1 | Month 2 | Month 3 |
+|---|---|---|---|
+| Furniture | $10,526.77 | $9,921.59 | $16,576.87 |
+| Technology | $20,100.38 | $18,198.55 | $32,443.12 |
+| Office Supplies | $17,978.32 | $15,467.39 | $23,346.41 |
+| West | $15,478.12 | $13,405.16 | $28,366.09 |
+| East | $11,878.47 | $13,477.98 | $19,848.30 |
+
+Matches `segment_level_forecasts.png` exactly. ✅ Technology leads in absolute revenue, consistent with the memo's §2 claim that Technology is the primary revenue driver.
+
+### West "stability" claim doesn't hold up
+
+The memo (§2) states the **West Region** shows *"an exceptionally stable, upward trajectory... the business unit's most reliable growth source."* The notebook's own **Regional Volatility Index** (year-over-year % change std. dev., lower = more stable) says otherwise:
+
+| Region | Volatility Index |
 |---|---|
-| OverTime = Yes | 1.626 |
-| BusinessTravel = Frequently | 1.597 |
-| JobRole = Laboratory Technician | 1.572 |
-| JobRole = Sales Representative | 1.264 |
-| JobRole = Research Director | 1.112 |
-| EducationField = Other | 1.020 |
-| BusinessTravel = Rarely | 0.904 |
-| MaritalStatus = Single | 0.865 |
-| JobRole = Human Resources | 0.671 |
-| TotalWorkingYears | 0.612 |
+| **East** | **0.018** (most stable) |
+| Central | 0.253 |
+| **West** | **0.257** |
+| South | 0.371 |
 
-**Overtime and frequent travel are the two strongest, most trustworthy signals** — both are large-magnitude coefficients on common, well-populated categories (416 employees work overtime, plenty travel frequently), so these aren't artifacts of a rare category. The raw rates back this up directly: overtime workers leave at 30.5% vs. 10.4% for everyone else — a real, large gap, verified straight from the data.
-
-**One flag on "Research Director" (coefficient 1.112, 5th-ranked "driver"):** Research Director actually has the *lowest* attrition rate of any job role in the dataset (2.5%), verified directly from the raw data. A large logistic-regression coefficient on a category with almost no leavers is the classic sign of an unstable estimate on a small/sparse group, not a genuine risk driver. As currently presented, the chart could be misread as "being a Research Director increases attrition risk" — nearly the opposite of what's true. Worth a caption clarifying that a few of the mid-table coefficients (Research Director, EducationField=Other) reflect small/sparse groups rather than dependable effects, distinct from the two clearly load-bearing findings (overtime, travel).
+West did grow the most in absolute dollars ($145,908 → $248,131, 2015→2018), so it's a legitimate *growth* leader — but by the notebook's own stability metric, **East is ~14x more stable than West**, not the other way around. The memo's Capital Allocation recommendation (§6) to shift stock toward West is defensible on growth grounds, but the "most reliable/stable" language should be corrected or re-attributed to East.
 
 ---
 
-## 4. Cross-Checking the EDA Claims Against the Data
+## 5. Anomaly Detection (Task 5)
 
-I recomputed the key EDA numbers directly from the CSV to check them against the notebook's narrative text and the charts. Most hold up; a few don't:
+Weekly sales (209 weeks) run through Isolation Forest (5% contamination) and a rolling 4-week Z-Score (>2σ):
 
-- ✅ **Sales dept 20.6%, HR 19.0%, R&D 13.8%** — matches Chart 1 and the raw data exactly.
-- ✅ **Sales Representative 39.8–39.9% attrition** — matches Chart 1 and raw data.
-- ✅ **Income gap: leavers average $4,787/mo vs. $6,833/mo for stayers** — matches Chart 2 exactly.
-- ❌ **Laboratory Technician attrition is reported as "31.2%"** in the notebook narrative and the HR summary — but the actual rate, confirmed both from Chart 1 and directly from the raw data, is **23.9%**. This is a real inconsistency between the write-up text and the project's own chart (which shows 23.9% right below the same claim). Worth fixing — 31.2% overstates the Lab Technician problem relative to what the data actually shows.
-- ❌ **"People who left earned $4,780 less per month"** (from the summary doc's "Salary Is Not the Whole Story" section) — this appears to conflate the leavers' *average income* ($4,787) with the *income gap* between leavers and stayers, which is actually **$2,046** (the number correctly stated earlier in the notebook's own EDA output, and confirmed from the raw data). Worth correcting — $4,780 vs $2,046 meaningfully changes how large the "salary isn't the main driver" argument looks.
-- ⚠️ **"Work-Life Balance 1: 25.6% attrition vs Balance 4: 14.3%"** — recomputed from the raw data this is actually **31.3% vs. 17.6%**. Both numbers are off from what's stated, though the *direction* of the finding (low work-life balance → higher attrition) is correct and real.
+| Method | Anomalies flagged |
+|---|---|
+| Isolation Forest | **11** |
+| Z-Score (rolling, >2σ) | **0** |
+| Mutual consensus | 0 |
 
-None of these change the overall story (overtime and travel dominate, salary is secondary), but the Lab Technician and salary-gap numbers specifically are the ones most likely to get repeated verbatim in a leadership deck, so they're worth fixing at the source.
-
----
-
-## 5. Business Recommendations — Sanity Check
-
-The two recommendations in the summary doc hold up reasonably well against the numbers:
-
-- **Cap overtime:** 416 employees (28% of workforce) work overtime, confirmed directly from the data, at a 30.5% attrition rate vs. 10.4% for others — a genuine ~20-point gap. The claimed "60+ employees saved per year" is actually a *conservative* estimate: if overtime attrition fully closed to the 10.4% baseline, that's roughly 84 employees/year on the current overtime population, so 60+ is a defensible, non-inflated target.
-- **Career paths for Lab Techs / Sales Reps:** the "35% → 15%" target range is worth a second look given the *actual* current rates for these two roles (23.9% and 39.8% respectively, per the corrected figures in §4) — the blended starting point is likely somewhat different from 35% depending on how it was weighted.
+The Z-Score method flags nothing under this rolling-window setup — the "Z-Score Anomaly" legend entry in `detected_anomalies.png` is effectively decorative (only one faint unflagged point near the huge March 2015 spike). Worth noting in the memo's §4, since it currently presents both methods as if they contributed jointly ("cross-verified with rolling statistical Z-Scores") when in practice only Isolation Forest did the flagging.
 
 ---
 
-## 6. Model Limitations (already well-documented — worth keeping as-is)
+## 6. Product Demand Clustering (Task 6)
 
-The summary doc's caveats section is genuinely good practice and I'd leave it largely untouched: it correctly notes the model is a point-in-time snapshot, that correlation (e.g. `MaritalStatus_Single`) isn't causation, that the single-company dataset may not generalize, and that with 16% base-rate attrition the model will still miss real leavers. I'd only add one more: **precision is low (0.357)** — of every employee the model flags as high-risk, roughly 2 in 3 flags will be false alarms. That's an acceptable trade-off for a "review these people" workflow (better to over-flag than miss leavers), but it should be stated explicitly alongside the other caveats so HR doesn't over-interpret an individual risk score.
+K-Means (k=4, chosen from the elbow curve) on Sub-Category features (order volume, average order value, monthly sales volatility, 2015→2018 growth rate), visualized via PCA:
+
+| Cluster | Members | Memo label (§5) |
+|---|---|---|
+| 0 | Copiers *(alone)* | High-Volume Core Anchors |
+| 1 | Bookcases, Envelopes, Fasteners, Labels, Supplies, Tables | High-Variance Specialized Lines |
+| 2 | Accessories, Appliances, Art, Binders, Chairs, Furnishings, Paper, Phones, Storage | Emerging Growth Catalogs |
+| 3 | Machines *(alone)* | Low-Velocity / Stagnant Stock |
+
+Labels are consistent with `app.py`'s strategy matrix. ⚠️ One thing worth flagging to the reader: Clusters 0 and 3 each contain a **single** sub-category (Copiers, Machines) — these are high-price, low-frequency items that sit far out on Principal Component 1 in `product_demand_clusters.png`. With only one member each, they're closer to outlier isolation than genuine behavioral segments, so the "stocking protocol" language for those two rows should be read as SKU-specific guidance rather than a generalizable cluster pattern.
+
+The elbow curve itself (`clustering_elbow_curve.png`) doesn't show a sharp elbow — inertia declines smoothly from k=2 to k=7, so k=4 was a reasonable but somewhat judgment-based choice rather than an unambiguous "elbow."
 
 ---
 
-## 7. Suggested Next Steps
+## 7. Streamlit App (`app.py`) — one issue worth fixing
 
-- Fix the numeric discrepancies in §4 before this report circulates further (Lab Technician rate, salary gap, work-life-balance rates, and the accuracy/ROC-AUC label).
-- Add a footnote to Chart 4 flagging that a couple of the mid-ranked coefficients (Research Director, EducationField=Other) come from small/sparse groups and shouldn't be read as dependable drivers the way overtime and travel are.
-- Try tuning the decision threshold directly (rather than relying only on `class_weight='balanced'`) via precision-recall trade-off analysis, to see if recall can be pushed higher without a large precision cost.
-- Cross-validate rather than relying on a single 80/20 split, given the relatively small number of positive cases (237) available to learn from.
+The **Forecast Explorer** page (Page 2) displays a "Model Diagnostic Accuracy Footprint" with MAE/RMSE metrics. These are **hardcoded placeholder values** (`mae_bench, rmse_bench = 28450.20, 36100.40`) shown regardless of which segment or horizon the user selects — they don't reflect the actual validated SARIMA error from the notebook ($19,244.49 / $19,950.07 MAE/RMSE, Task 3). As written, a user could reasonably believe these are the real per-segment accuracy numbers. Either compute live validation metrics per segment, or relabel the metric cards as illustrative/placeholder.
+
+Everything else in the app lines up with the notebook: same SARIMA order, same Isolation Forest contamination rate, and the chart path (`charts/product_demand_clusters.png`) matches the notebook's `savefig` path.
 
 ---
 
-*Files: `analysis.ipynb` (full workflow), `HR_Attrition.csv` (source data), `chart1–5` PNGs, `summary.docx` (HR Director report).*
+## 8. Limitations (memo §7 is accurate and worth keeping)
+
+The memo's own caveats section holds up well: the model is historical-precedent-based and can't anticipate black-swan disruptions, trade shocks, or supply shutdowns. Worth adding one more: **the 90-day forecast figures in §3 need to be regenerated from this notebook** before they're used for procurement planning (see §3 above).
+
+---
+
+## 9. Suggested Next Steps
+
+- Regenerate the memo's §3 90-day forecast numbers directly from the notebook's SARIMA output ($60,331.79 / $91,458.22 / $97,167.57) rather than the current figures.
+- Correct or re-attribute the "West is most stable" claim in §2 — East is the stability leader by the notebook's own volatility index; West is the growth leader.
+- Replace the hardcoded MAE/RMSE benchmark in `app.py` Page 2 with real, segment-specific validation metrics (or clearly label them as illustrative).
+- Reword the memo's §4 framing so it doesn't imply Z-Score anomaly detection contributed meaningfully — it flagged zero weeks under the current settings.
+- Consider re-running the elbow method with a wider k range or a silhouette score check, since k=4 wasn't a sharp, unambiguous elbow.
+
+---
+
+*Files: `analysis.ipynb` (full workflow) · `train.csv` (source data) · `app.py` + `requirements.txt` (Streamlit dashboard) · `clustering_elbow_curve.png`, `detected_anomalies.png`, `product_demand_clusters.png`, `segment_level_forecasts.png` (exported charts) · `summary_Tirth_Shah.pdf` (executive memo).*
