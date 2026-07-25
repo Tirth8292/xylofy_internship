@@ -5,9 +5,9 @@ A consolidated summary of weekly internship projects: regression, classification
 ---
 
 ## Table of Contents
-1. [Week 1 — House Price Prediction](#week-1--house-price-prediction)
-2. [Week 2 — Employee Attrition Prediction](#week-2--employee-attrition-prediction)
-3. [Week 3 & 4 — Sales Forecasting Intelligence *(pending correct content)*](#Week3&4—SalesforecastingIntelligence—Forecasting,Anomalies&ProductSegmentation)
+1. Week 1 — House Price Prediction
+2. Week 2 — Employee Attrition Prediction
+3. Week 3 & 4 — Sales forecasting Intelligence — Forecasting, Anomalies & Product Segmentation
 
 ---
 
@@ -166,7 +166,7 @@ Well-documented already: point-in-time snapshot, correlation ≠ causation, sing
 
 ---
 
-## Week 3 & 4 —  # Sales forecasting Intelligence — Forecasting, Anomalies & Product Segmentation
+## Week 3 & 4 —  Sales forecasting Intelligence — Forecasting, Anomalies & Product Segmentation
 
 **Dataset:** Superstore Sales (`train.csv`) · 9,800 orders, 24 columns, 4-year horizon (2015–2018)
 **Best forecasting model:** SARIMA(1,1,1)(1,1,1,12) · **Report date:** July 2026
